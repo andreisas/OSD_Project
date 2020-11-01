@@ -12,6 +12,7 @@ typedef struct _MUTEX
 
     _Guarded_by_(MutexLock)
     LIST_ENTRY          WaitingList;
+    LIST_ENTRY AcquiredMutexListElem; // elem in list of mutexes acquired
     struct _THREAD*     Holder;
 } MUTEX, *PMUTEX;
 

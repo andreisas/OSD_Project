@@ -77,6 +77,7 @@ SET PXE_PATH="D:\faculta fara perl\OS\HAL9000folder-20200929\HAL9000\PXE"
 SET PATH_TO_VIX_TOOLS="C:\Program Files (x86)\VMware\VMware Workstation"
 SET PATH_TO_LOG_FILE="D:\faculta fara perl\OS\HAL9000folder-20200929\HAL9000\VM\HAL9000_VM\HAL9000.log"
 SET PATH_TO_VM_DISK="D:\faculta fara perl\OS\HAL9000folder-20200929\HAL9000\VM\HAL9000_VM\HAL9000.vmdk"
+
 goto end
 
 :end

@@ -119,3 +119,16 @@ THREAD_PRIORITY
 ThreadGetPriority(
     IN_OPT  PTHREAD             Thread
     );
+
+
+int
+ThreadComparePriorityReadyList(
+    PLIST_ENTRY e1,
+    PLIST_ENTRY e2,
+    PVOID Context
+);
+
+void
+ThreadYieldForIpi(
+
+);
