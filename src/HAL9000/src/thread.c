@@ -447,9 +447,8 @@ ThreadTick(
         pCpu->ThreadData.YieldOnInterruptReturn = TRUE;
     }
 }
-/// Aici incepe troaca
 
-int 
+INT64 
 ThreadComparePriorityReadyList(
     PLIST_ENTRY e1,
     PLIST_ENTRY e2,
@@ -461,7 +460,7 @@ ThreadComparePriorityReadyList(
     PTHREAD pTh1;
     pTh1 = CONTAINING_RECORD(e1, THREAD, ReadyList);
     PTHREAD pTh2;
-    pTh1 = CONTAINING_RECORD(e2, THREAD, ReadyList);
+    pTh2 = CONTAINING_RECORD(e2, THREAD, ReadyList);
 
     THREAD_PRIORITY prio1;
     THREAD_PRIORITY prio2;
@@ -478,8 +477,6 @@ ThreadComparePriorityReadyList(
         return 0;
     }
 }
-
-/// Aici se termina troaca
 
 void
 ThreadYield(
@@ -526,20 +523,15 @@ ThreadYield(
     CpuIntrSetState(oldState);
 }
 
-void
-ThreadYieldForIpi(
-    void
+ static
+ STATUS
+ (__cdecl ThreadYieldForIpi)(
+     IN_OPT      PVOID       Context
 )
 {
-    PTHREAD currT = GetCurrentThread();
-
-    PLIST_ENTRY first = &currT()->ReadyList;
-    PTHREAD firstThread = CONTAINING_RECORD(head, THREAD, ReadyList);
-
-    GetCurrentThread()->Priority = NewPriority;
-
-    if (currT->Priority > firstThread->Priority)
-        ThreadYield();
+     UNREFERENCED_PARAMETER(Context);
+    ThreadYield();
+    return STATUS_SUCCESS;
 }
 
 void
@@ -578,13 +570,16 @@ ThreadUnblock(
 
     ASSERT(NULL != Thread);
 
-    (&Thread->BlockLock, &oldState);
+    LockAcquire(&Thread->BlockLock, &oldState);
 
     ASSERT(ThreadStateBlocked == Thread->State);
 
     LockAcquire(&m_threadSystemData.ReadyThreadsLock, &dummyState);
     InsertOrderedList(&m_threadSystemData.ReadyThreadsList, &Thread->ReadyList, ThreadComparePriorityReadyList, NULL); ///Here
-    SmpSendGenericIpi(ThreadYieldForIpi, NULL, NULL, NULL, FALSE); ///Here
+
+    //THREAD_PRIORITY new_prio = ThreadGetPriority(Thread);
+
+    SmpSendGenericIpi(ThreadYieldForIpi, NULL, NULL, NULL, TRUE); ///Here
     Thread->State = ThreadStateReady;
     LockRelease(&m_threadSystemData.ReadyThreadsLock, dummyState );
     LockRelease(&Thread->BlockLock, oldState);
@@ -714,7 +709,7 @@ ThreadSetPriority(
     ASSERT(ThreadPriorityLowest <= NewPriority && NewPriority <= ThreadPriorityMaximum);
 
     PLIST_ENTRY first = &GetCurrentThread()->ReadyList;
-    PTHREAD firstThread = CONTAINING_RECORD(head, THREAD, ReadyList);
+    PTHREAD firstThread = CONTAINING_RECORD(first, THREAD, ReadyList);
 
     GetCurrentThread()->Priority = NewPriority;
 

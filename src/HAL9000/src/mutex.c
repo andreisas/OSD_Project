@@ -55,7 +55,7 @@ MutexAcquire(
 
     while (Mutex->Holder != pCurrentThread)
     {
-        InsertOrderedList(&m_threadSystemData.ReadyThreadsList, &Thread->ReadyList, ThreadComparePriorityReadyList, NULL); ///Here
+        InsertOrderedList(&Mutex->WaitingList, &pCurrentThread->ReadyList, ThreadComparePriorityReadyList, NULL); ///Here
         ThreadTakeBlockLock();
         LockRelease(&Mutex->MutexLock, dummyState);
         ThreadBlock();
