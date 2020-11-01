@@ -90,6 +90,12 @@ typedef struct _THREAD
     PVOID                   UserStack;
 
     struct _PROCESS*        Process;
+
+    // Used for priority donation
+    THREAD_PRIORITY RealPriority; // the real ( original ) priority
+    LIST_ENTRY AcquiredMutexesList; // the list of mutexes held 
+    PMUTEX WaitedMutex ; // the mutex thread waits for
+
 } THREAD, *PTHREAD;
 
 //******************************************************************************
