@@ -4,6 +4,7 @@
 #include "ref_cnt.h"
 #include "ex_event.h"
 #include "thread.h"
+#include "mutex.h"
 
 typedef enum _THREAD_STATE
 {

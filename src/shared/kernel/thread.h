@@ -121,14 +121,15 @@ ThreadGetPriority(
     );
 
 
-int
+INT64
 ThreadComparePriorityReadyList(
     PLIST_ENTRY e1,
     PLIST_ENTRY e2,
     PVOID Context
 );
 
-void
-ThreadYieldForIpi(
-
+static
+STATUS
+(__cdecl ThreadYieldForIpi)(
+    IN_OPT      PVOID       Context
 );
