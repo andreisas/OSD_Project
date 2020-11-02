@@ -701,6 +701,15 @@ ThreadGetPriority(
     return (NULL != pThread) ? pThread->Priority : 0;
 }
 
+void ThreadDonatePriority(IN PTHREAD donor, IN PTHREAD MutexHolder) {
+    ASSERT(donor != NULL);
+    ASSERT(MutexHolder != NULL);
+        if (ThreadGetPriority(donor) > ThreadGetPriority(MutexHolder)) { MutexHolder->Priority = donor->Priority; }
+        if (MutexHolder->WaitedMutex) {
+            ThreadDonatePriority(MutexHolder, MutexHolder->WaitedMutex->Holder);
+        }
+}
+
 void
 ThreadSetPriority(
     IN      THREAD_PRIORITY     NewPriority
@@ -711,7 +720,10 @@ ThreadSetPriority(
     PLIST_ENTRY first = &GetCurrentThread()->ReadyList;
     PTHREAD firstThread = CONTAINING_RECORD(first, THREAD, ReadyList);
 
-    GetCurrentThread()->Priority = NewPriority;
+    // turtu: keep the donations relevant
+    GetCurrentThread()->Priority += NewPriority - GetCurrentThread()->RealPriority;
+    GetCurrentThread()->RealPriority = NewPriority;
+    // TURTU ASK: how do we update Priority according to RealPriority
 
     if (NewPriority > firstThread->Priority)
         ThreadYield();
@@ -849,6 +861,7 @@ _ThreadInit(
         pThread->Id = _ThreadSystemGetNextTid();
         pThread->State = ThreadStateBlocked;
         pThread->Priority = Priority;
+        pThread->RealPriority = Priority;
 
         LockInit(&pThread->BlockLock);
 
@@ -867,6 +880,7 @@ _ThreadInit(
             }
         }
 
+        pThread->WaitedMutex = NULL;
         *Thread = pThread;
 
         LOG_FUNC_END;
@@ -1294,4 +1308,25 @@ _ThreadKernelFunction(
 
     ThreadExit(exitStatus);
     NOT_REACHED;
+}
+
+void ThreadRecomputePriority(IN PTHREAD Thread)
+{
+    THREAD_PRIORITY maxPriority = Thread->RealPriority;
+    LIST_ITERATOR mutexesIterator;
+    ListIteratorInit(&Thread->AcquiredMutexesList, &mutexesIterator);
+    PLIST_ENTRY crtMutexEntry;
+    while ((crtMutexEntry = ListIteratorNext(&mutexesIterator)) != NULL) {
+        PMUTEX crtMutex = CONTAINING_RECORD(crtMutexEntry, MUTEX, AcquiredMutexListElem);
+        LIST_ITERATOR threadsIterator;
+        ListIteratorInit(&crtMutex->WaitingList, &threadsIterator);
+        PLIST_ENTRY crtThreadEntry;
+        while ((crtThreadEntry = ListIteratorNext(&threadsIterator)) != NULL) {
+            PTHREAD crtThread = CONTAINING_RECORD(crtThreadEntry, THREAD, ReadyList);
+            if (crtThread->Priority > maxPriority)
+                maxPriority = crtThread->Priority;
+        }
+    }
+
+    Thread->Priority = maxPriority;
 }
