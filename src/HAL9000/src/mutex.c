@@ -55,12 +55,16 @@ MutexAcquire(
 
     while (Mutex->Holder != pCurrentThread)
     {
+        ThreadDonatePriority(pCurrentThread, Mutex->Holder);
+        pCurrentThread->WaitedMutex = Mutex;
         InsertOrderedList(&Mutex->WaitingList, &pCurrentThread->ReadyList, ThreadComparePriorityReadyList, NULL); ///Here
         ThreadTakeBlockLock();
         LockRelease(&Mutex->MutexLock, dummyState);
         ThreadBlock();
         LockAcquire(&Mutex->MutexLock, &dummyState );
     }
+    pCurrentThread->WaitedMutex = NULL;
+    InsertTailList(&pCurrentThread->AcquiredMutexesList, &Mutex->AcquiredMutexListElem);
 
     _Analysis_assume_lock_acquired_(*Mutex);
 
@@ -87,6 +91,11 @@ MutexRelease(
         Mutex->CurrentRecursivityDepth--;
         return;
     }
+
+    RemoveEntryList(&Mutex->AcquiredMutexListElem);
+    // override every time, if they are the same then it has no effect
+    ThreadRecomputePriority(Mutex->Holder);
+
 
     pEntry = NULL;
 

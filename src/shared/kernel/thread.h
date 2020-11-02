@@ -133,3 +133,8 @@ STATUS
 (__cdecl ThreadYieldForIpi)(
     IN_OPT      PVOID       Context
 );
+
+void ThreadDonatePriority(IN PTHREAD donor, IN PTHREAD MutexHolder);
+
+
+void ThreadRecomputePriority(IN PTHREAD Thread);
