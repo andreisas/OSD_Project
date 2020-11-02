@@ -29,6 +29,7 @@ MutexAcquire(
     INOUT       PMUTEX      Mutex
     )
 {
+    LOGL("[TURTU] MutexAcquire START\n");
     INTR_STATE dummyState;
     INTR_STATE oldState;
     PTHREAD pCurrentThread = GetCurrentThread();
@@ -71,6 +72,7 @@ MutexAcquire(
     LockRelease(&Mutex->MutexLock, dummyState);
 
     CpuIntrSetState(oldState);
+    LOGL("[TURTU] MutexAcquire END\n");
 }
 
 RELEASES_EXCL_AND_REENTRANT_LOCK(*Mutex)
@@ -80,6 +82,7 @@ MutexRelease(
     INOUT       PMUTEX      Mutex
     )
 {
+    LOGL("[TURTU] MutexRelease START\n");
     INTR_STATE oldState;
     PLIST_ENTRY pEntry;
 
@@ -119,4 +122,5 @@ MutexRelease(
     _Analysis_assume_lock_released_(*Mutex);
 
     LockRelease(&Mutex->MutexLock, oldState);
+    LOGL("[TURTU] MutexRelease END");
 }

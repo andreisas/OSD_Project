@@ -455,6 +455,7 @@ ThreadComparePriorityReadyList(
     PVOID Context
 ) 
 {
+    LOGL("[TURTU] Thread Compare PriorityReadyList START");
     UNREFERENCED_PARAMETER(Context);
 
     PTHREAD pTh1;
@@ -466,6 +467,7 @@ ThreadComparePriorityReadyList(
     THREAD_PRIORITY prio2;
     prio1 = ThreadGetPriority(pTh1);
     prio2 = ThreadGetPriority(pTh2);
+    LOGL("[TURTU] Thread Compare PriorityReadyList END");
 
     if (prio1 > prio2) {
         return -1;
@@ -483,6 +485,7 @@ ThreadYield(
     void
     )
 {
+    LOGL("[TURTU] ThreadYield START\n");
     INTR_STATE dummyState;
     INTR_STATE oldState;
     PTHREAD pThread = GetCurrentThread();
@@ -521,6 +524,7 @@ ThreadYield(
     LOG_TRACE_THREAD("Returned from _ThreadSchedule\n");
 
     CpuIntrSetState(oldState);
+    LOGL("[TURTU] ThreadYield END\n");
 }
 
  static
@@ -529,8 +533,10 @@ ThreadYield(
      IN_OPT      PVOID       Context
 )
 {
+     LOGL("[TURTU] ThreadYieldForIpi START\n");
      UNREFERENCED_PARAMETER(Context);
     ThreadYield();
+    LOGL("[TURTU] ThreadYieldForIpi END\n");
     return STATUS_SUCCESS;
 }
 
@@ -539,6 +545,7 @@ ThreadBlock(
     void
     )
 {
+    LOGL("[TURTU] ThreadBlock START\n");
     INTR_STATE oldState;
     PTHREAD pCurrentThread;
 
@@ -558,6 +565,7 @@ ThreadBlock(
     LockAcquire(&m_threadSystemData.ReadyThreadsLock, &oldState);
     _ThreadSchedule();
     ASSERT( !LockIsOwner(&m_threadSystemData.ReadyThreadsLock));
+    LOGL("[TURTU] ThreadBlock END\n");
 }
 
 void
@@ -565,6 +573,7 @@ ThreadUnblock(
     IN      PTHREAD              Thread
     )
 {
+    LOGL("[TURTU] ThreadUblock START\n");
     INTR_STATE oldState;
     INTR_STATE dummyState;
 
@@ -579,10 +588,11 @@ ThreadUnblock(
 
     //THREAD_PRIORITY new_prio = ThreadGetPriority(Thread);
 
-    SmpSendGenericIpi(ThreadYieldForIpi, NULL, NULL, NULL, TRUE); ///Here
+    //SmpSendGenericIpi(ThreadYieldForIpi, NULL, NULL, NULL, TRUE); ///Here
     Thread->State = ThreadStateReady;
     LockRelease(&m_threadSystemData.ReadyThreadsLock, dummyState );
     LockRelease(&Thread->BlockLock, oldState);
+    LOGL("[TURTU] ThreadUblock END\n");
 }
 
 
@@ -696,18 +706,25 @@ ThreadGetPriority(
     IN_OPT  PTHREAD             Thread
     )
 {
+    LOGL("[TURTU] ThreadGetPriority START\n");
     PTHREAD pThread = (NULL != Thread) ? Thread : GetCurrentThread();
 
+    LOGL("[TURTU] ThreadGetPriority END\n");
     return (NULL != pThread) ? pThread->Priority : 0;
 }
 
 void ThreadDonatePriority(IN PTHREAD donor, IN PTHREAD MutexHolder) {
+    LOGL("[TURTU] ThreadDonatePriority start\n");
     ASSERT(donor != NULL);
     ASSERT(MutexHolder != NULL);
-        if (ThreadGetPriority(donor) > ThreadGetPriority(MutexHolder)) { MutexHolder->Priority = donor->Priority; }
+    LOGL("[TURTU] ThreadDonatePriority ThreadGetPriorities\n");
+    if (ThreadGetPriority(donor) > ThreadGetPriority(MutexHolder)) {
+        MutexHolder->Priority = donor->Priority;
+        LOGL("[TURTU] ThreadDonatePriority recursive call if\n");
         if (MutexHolder->WaitedMutex) {
             ThreadDonatePriority(MutexHolder, MutexHolder->WaitedMutex->Holder);
         }
+    }
 }
 
 void
@@ -715,11 +732,14 @@ ThreadSetPriority(
     IN      THREAD_PRIORITY     NewPriority
     )
 {
+
+    LOGL("[TURTU] ThreadSetPriority Start\n");
     ASSERT(ThreadPriorityLowest <= NewPriority && NewPriority <= ThreadPriorityMaximum);
 
     PLIST_ENTRY first = &GetCurrentThread()->ReadyList;
     PTHREAD firstThread = CONTAINING_RECORD(first, THREAD, ReadyList);
 
+    LOGL("[TURTU] ThreadSetPriority beforeSetPriority\n");
     // turtu: keep the donations relevant
     GetCurrentThread()->Priority += NewPriority - GetCurrentThread()->RealPriority;
     GetCurrentThread()->RealPriority = NewPriority;
@@ -727,8 +747,6 @@ ThreadSetPriority(
 
     if (NewPriority > firstThread->Priority)
         ThreadYield();
-
-    
 }
 
 STATUS
@@ -788,6 +806,8 @@ _ThreadInit(
     IN          BOOLEAN             AllocateKernelStack
     )
 {
+
+    LOGL("[TURTU] _ThreadInit Start\n");
     STATUS status;
     PTHREAD pThread;
     DWORD nameLen;
@@ -862,6 +882,8 @@ _ThreadInit(
         pThread->State = ThreadStateBlocked;
         pThread->Priority = Priority;
         pThread->RealPriority = Priority;
+        pThread->WaitedMutex = NULL;
+        InitializeListHead(&pThread->AcquiredMutexesList);
 
         LockInit(&pThread->BlockLock);
 
@@ -880,12 +902,12 @@ _ThreadInit(
             }
         }
 
-        pThread->WaitedMutex = NULL;
         *Thread = pThread;
 
         LOG_FUNC_END;
     }
 
+    LOGL("[TURTU] _ThreadInit START\n");
     return status;
 }
 
@@ -1312,6 +1334,7 @@ _ThreadKernelFunction(
 
 void ThreadRecomputePriority(IN PTHREAD Thread)
 {
+    LOGL("ThreadRecomputePriority Start");
     THREAD_PRIORITY maxPriority = Thread->RealPriority;
     LIST_ITERATOR mutexesIterator;
     ListIteratorInit(&Thread->AcquiredMutexesList, &mutexesIterator);
@@ -1327,6 +1350,7 @@ void ThreadRecomputePriority(IN PTHREAD Thread)
                 maxPriority = crtThread->Priority;
         }
     }
+    LOGL("ThreadRecomputePriority End");
 
     Thread->Priority = maxPriority;
 }
