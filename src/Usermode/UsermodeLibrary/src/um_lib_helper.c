@@ -18,6 +18,10 @@ volatile DWORD m_freeStartCtxIdx;
 
 static FUNC_ThreadStart __start_thread;
 
+// Temporal hack to avoid linker optimization of marking data section to initialized in the case where everything is 0 inside the data section
+// TODO: fix HAL9000 PE loader to check the section property and to initialize the data section in memory to 0
+volatile QWORD m_dummyNonZeroData = 0x0D15EA5E;
+
 void
 LogBuffer(
     IN_Z    char*                   FormatBuffer,
@@ -28,6 +32,9 @@ LogBuffer(
     va_list va;
     STATUS status;
     QWORD bytesWritten;
+
+    // Temporal hack
+    ASSERT(m_dummyNonZeroData == 0x0D15EA5E);
 
     va_start(va, FormatBuffer);
 
