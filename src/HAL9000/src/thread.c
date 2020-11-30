@@ -950,8 +950,63 @@ _ThreadSetupMainThreadUserStack(
     ASSERT(ResultingStack != NULL);
     ASSERT(Process != NULL);
 
-    *ResultingStack = InitialStack;
+    //*ResultingStack = InitialStack;
+    
+    char* fullCommandLine = Process->FullCommandLine;
+    DWORD argc = Process->NumberOfArguments;
+    QWORD fullCommandLineLength, alignmentSize, beforeAlignSize, totalSize;
+    fullCommandLineLength = strlen(fullCommandLine) + 1;
+    beforeAlignSize = fullCommandLineLength + SHADOW_STACK_SIZE + sizeof(PVOID) * (argc + 1);
 
+    alignmentSize = (2 * STACK_ALIGNMENT_SIZE - (beforeAlignSize - 8) % STACK_ALIGNMENT_SIZE) % STACK_ALIGNMENT_SIZE;
+    totalSize = (beforeAlignSize + STACK_ALIGNMENT_SIZE - 1) / STACK_ALIGNMENT_SIZE * STACK_ALIGNMENT_SIZE;
+
+    LOG("Razvan: command line: %s\n", fullCommandLine);
+    LOG("Razvan: argc: %d\n", argc);
+    LOG("Razvan: beforeAlignSize: %d\n", beforeAlignSize);
+    LOG("Razvan: alignmentSize: %d\n", alignmentSize);
+    LOG("Razvan: totalSize: %d\n", totalSize);
+
+
+    *ResultingStack = PtrDiff(InitialStack, totalSize);
+    PVOID KernelAddress;
+    STATUS status = MmuGetSystemVirtualAddressForUserBuffer(
+        *ResultingStack,
+        totalSize,
+        PAGE_RIGHTS_READWRITE,
+        Process,
+        &KernelAddress
+    );
+    if (!SUCCEEDED(status)) return STATUS_UNSUCCESSFUL;
+    QWORD offset = SHADOW_STACK_SIZE + sizeof(PVOID) * (argc + 1);
+    DWORD newArg = 0, argIndex = 0;
+    for (DWORD commandLineIndex = 0; commandLineIndex < fullCommandLineLength - 1; commandLineIndex++) {
+        BYTE* stackPointer = (BYTE*)PtrOffset(KernelAddress, offset + alignmentSize + commandLineIndex);
+        if (' ' == fullCommandLine[commandLineIndex]) {
+            *stackPointer = 0;
+            newArg = 1;
+        }
+        else {
+            *stackPointer = 0;
+            if (newArg) {
+                newArg = 0;
+                char** sPointer = (char**)PtrOffset(KernelAddress, SHADOW_STACK_SIZE + sizeof(PVOID) + sizeof(char*) * argIndex);
+                *sPointer = (char*)PtrOffset(*ResultingStack, SHADOW_STACK_SIZE + sizeof(PVOID) * (argc + 1) + alignmentSize + commandLineIndex);
+                argIndex = argIndex + 1;
+            }
+        }
+    }
+
+    for (DWORD align = 0; align < alignmentSize; align++) {
+        BYTE* alignPointer = (BYTE*)KernelAddress + SHADOW_STACK_SIZE + sizeof(PVOID) * (argc + 1) + align;
+        *alignPointer = NULL;
+    }
+    *((QWORD*)KernelAddress) = 0x12345678;
+    *((QWORD*)PtrOffset(KernelAddress, sizeof(PVOID))) = (QWORD)argc;
+    *((QWORD*)PtrOffset(KernelAddress, 2 * sizeof(PVOID))) = (char*)PtrOffset(KernelAddress, SHADOW_STACK_SIZE + 4);
+    *((QWORD*)PtrOffset(KernelAddress, 3 * sizeof(PVOID))) = 0x12345678;
+    *((QWORD*)PtrOffset(KernelAddress, 4 * sizeof(PVOID))) = 0x12345678;
+    MmuFreeSystemVirtualAddressForUserBuffer(KernelAddress);
     return STATUS_SUCCESS;
 }
 
