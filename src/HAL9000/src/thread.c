@@ -968,7 +968,7 @@ _ThreadSetupMainThreadUserStack(
     LOG("Razvan: totalSize: %d\n", totalSize);
 
 
-    *ResultingStack = PtrDiff(InitialStack, totalSize);
+    *ResultingStack = (PVOID)PtrDiff(InitialStack, totalSize);
     PVOID KernelAddress;
     STATUS status = MmuGetSystemVirtualAddressForUserBuffer(
         *ResultingStack,
@@ -999,11 +999,11 @@ _ThreadSetupMainThreadUserStack(
 
     for (DWORD align = 0; align < alignmentSize; align++) {
         BYTE* alignPointer = (BYTE*)KernelAddress + SHADOW_STACK_SIZE + sizeof(PVOID) * (argc + 1) + align;
-        *alignPointer = NULL;
+        *alignPointer = 0;
     }
     *((QWORD*)KernelAddress) = 0x12345678;
     *((QWORD*)PtrOffset(KernelAddress, sizeof(PVOID))) = (QWORD)argc;
-    *((QWORD*)PtrOffset(KernelAddress, 2 * sizeof(PVOID))) = (char*)PtrOffset(KernelAddress, SHADOW_STACK_SIZE + 4);
+    *((char**)PtrOffset(KernelAddress, 2 * sizeof(PVOID))) = (char*)PtrOffset(KernelAddress, SHADOW_STACK_SIZE + 4);
     *((QWORD*)PtrOffset(KernelAddress, 3 * sizeof(PVOID))) = 0x12345678;
     *((QWORD*)PtrOffset(KernelAddress, 4 * sizeof(PVOID))) = 0x12345678;
     MmuFreeSystemVirtualAddressForUserBuffer(KernelAddress);

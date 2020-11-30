@@ -302,7 +302,7 @@ ProcessCreate(
             *Process = pProcess;
         }
     }
-
+    pProcess->NewThreadHandle = 0;
     LOG_FUNC_END;
 
     return status;

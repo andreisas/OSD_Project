@@ -25,6 +25,7 @@ C_HEADER_START
 #endif // PAGE_SHIFT
 
 #define SHADOW_STACK_SIZE                   0x20
+#define STACK_ALIGNMENT_SIZE                   16
 
 #define BITS_PER_BYTE                       8
 #define BITS_FOR_STRUCTURE(x)               (BITS_PER_BYTE*sizeof(x))
