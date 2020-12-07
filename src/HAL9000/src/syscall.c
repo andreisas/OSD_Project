@@ -328,3 +328,297 @@ SyscallThreadCloseHandle(
     ThreadCloseHandle(pThread);
     return STATUS_SUCCESS;
 };
+
+STATUS
+SyscallProcessExit(
+    IN      STATUS                  ExitStatus
+)
+{
+    UNREFERENCED_PARAMETER(ExitStatus);
+
+    ProcessTerminate(GetCurrentProcess());
+
+    return STATUS_SUCCESS;
+}
+
+STATUS
+SyscallProcessCreate(
+    IN_READS_Z(PathLength)
+    char* ProcessPath,
+    IN          QWORD               PathLength,
+    IN_READS_OPT_Z(ArgLength)
+    char* Arguments,
+    IN          QWORD               ArgLength,
+    OUT         UM_HANDLE* ProcessHandle
+)
+{
+    if (!ProcessPath) {
+        return STATUS_INVALID_POINTER;
+    }
+    PPROCESS currentProcess = GetCurrentProcess();
+
+    if (!SUCCEEDED(MmuIsBufferValid((PVOID)ProcessPath, PathLength, PAGE_RIGHTS_ALL, currentProcess)))
+    {
+        return STATUS_INVALID_BUFFER;
+    }
+
+    const char* systemPartition = IomuGetSystemPartitionPath();
+
+    char fullPath[MAX_PATH];
+
+    if (ProcessPath[1] != ':')
+    {
+        snprintf(fullPath, MAX_PATH, "%s%s\\%s", systemPartition, "APPLICATIONS", ProcessPath);
+    }
+    else {
+        strcpy(fullPath, ProcessPath);
+    }
+
+    PPROCESS createdProcess = NULL;
+    STATUS status;
+
+    if (ArgLength > 0)
+    {
+        status = ProcessCreate(fullPath, Arguments, &createdProcess);
+    }
+    else
+    {
+        status = ProcessCreate(fullPath, NULL, &createdProcess);
+    }
+
+    if (!SUCCEEDED(status))
+    {
+        return STATUS_INVALID_POINTER;
+    }
+
+    PUM_HANDLE_DATA Handle = ExAllocatePoolWithTag(
+        PoolAllocateZeroMemory,
+        1 * sizeof(UM_HANDLE_DATA),
+        HEAP_TEMP_TAG,
+        0
+    );
+
+    status = UmHandleInit(Handle);
+
+    Handle->pResource = createdProcess;
+
+    INTR_STATE dummyState;
+
+    LockAcquire(&currentProcess->ProcessHandleListLock, &dummyState);
+    InsertTailList(&currentProcess->ProcessHandleList, &Handle->listResource);
+    LockRelease(&currentProcess->ProcessHandleListLock, dummyState);
+
+    *ProcessHandle = Handle->Handle;
+
+    return STATUS_SUCCESS;
+
+}
+
+STATUS
+SyscallProcessGetPid(
+    IN_OPT  UM_HANDLE               ProcessHandle,
+    OUT     PID* ProcessId
+)
+{
+    PPROCESS processFromHandle = NULL;
+
+    STATUS status = GetProcessFromUmHandle(ProcessHandle, GetCurrentProcess(), &processFromHandle);
+
+    if (!SUCCEEDED(status))
+    {
+        *ProcessId = (PID)0;
+        return STATUS_SUCCESS;
+    }
+
+    if (processFromHandle != NULL) {
+
+        *ProcessId = processFromHandle->Id;
+
+        return STATUS_SUCCESS;
+    }
+    return STATUS_INVALID_POINTER;
+}
+
+
+STATUS
+SyscallProcessWaitForTermination(
+    IN      UM_HANDLE               ProcessHandle,
+    OUT     STATUS* TerminationStatus
+)
+{
+    if (TerminationStatus == NULL)
+    {
+        return STATUS_INVALID_BUFFER;
+    }
+
+    if (UM_INVALID_HANDLE_VALUE == ProcessHandle)
+    {
+        *TerminationStatus = STATUS_UNSUCCESSFUL;
+        return STATUS_SUCCESS;
+    }
+
+    PPROCESS processFromHandle = NULL;
+
+    STATUS status = GetProcessFromUmHandle(ProcessHandle, GetCurrentProcess(), &processFromHandle);
+
+    if (!SUCCEEDED(status))
+    {
+        return STATUS_INVALID_PARAMETER1;
+    }
+
+    if (processFromHandle != NULL)
+    {
+        ProcessWaitForTermination(processFromHandle, TerminationStatus);
+
+        return STATUS_SUCCESS;
+    }
+    return STATUS_ELEMENT_NOT_FOUND;
+}
+
+
+STATUS
+SyscallProcessCloseHandle(
+    IN      UM_HANDLE               ProcessHandle
+)
+{
+    STATUS status = ProcessCloseUmHandle(ProcessHandle, GetCurrentProcess());
+
+    if (!SUCCEEDED(status))                 
+    {
+        return STATUS_INVALID_PARAMETER1;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+STATUS
+SyscallFileCreate(
+    IN_READS_Z(PathLength)
+    char* Path,
+    IN          QWORD                   PathLength,
+    IN          BOOLEAN                 Directory,
+    IN          BOOLEAN                 Create,
+    OUT         UM_HANDLE* FileHandle
+)
+{
+    const char* systemPartition = IomuGetSystemPartitionPath();
+
+    char fullPath[MAX_PATH];
+    if (!SUCCEEDED(MmuIsBufferValid((PVOID)Path, PathLength, PAGE_RIGHTS_ALL, GetCurrentProcess())))
+    {
+        return STATUS_INVALID_PARAMETER1;
+    }
+
+
+    if (Path[1] != ':')
+    {
+        snprintf(fullPath, MAX_PATH, "%s%s", systemPartition, Path);
+    }
+    else {
+        strcpy(fullPath, Path);
+    }
+
+    PFILE_OBJECT createFileObject = NULL;
+
+    STATUS status = IoCreateFile(&createFileObject, fullPath, Directory, Create, FALSE);
+
+    if (!SUCCEEDED(status))
+    {
+        return STATUS_INVALID_FILE_NAME;
+    }
+
+    PUM_HANDLE_DATA Handle = ExAllocatePoolWithTag(
+        PoolAllocateZeroMemory,
+        1 * sizeof(UM_HANDLE_DATA),
+        HEAP_TEMP_TAG,
+        0
+    );
+
+    PPROCESS currentProcess = GetCurrentProcess();
+
+    status = UmHandleInit(Handle);
+
+    Handle->pResource = createFileObject;
+
+    INTR_STATE dummyState;
+
+    LockAcquire(&currentProcess->FileHandleListLock, &dummyState);
+    InsertTailList(&currentProcess->FileHandleList, &Handle->listResource);
+    LockRelease(&currentProcess->FileHandleListLock, dummyState);
+
+    *FileHandle = Handle->Handle;
+
+    return STATUS_SUCCESS;
+}
+
+STATUS
+SyscallFileClose(
+    IN          UM_HANDLE               FileHandle
+)
+{
+    PPROCESS currentProcess = GetCurrentProcess();
+
+    if (FileHandle == UM_FILE_HANDLE_STDOUT)
+    {
+        if (currentProcess->StdOut == FALSE) {
+            return STATUS_UNSUCCESSFUL;
+        }
+        else {
+            currentProcess->StdOut = FALSE;
+            return STATUS_SUCCESS;
+        }
+
+    }
+
+    if (UM_INVALID_HANDLE_VALUE == FileHandle)
+    {
+        return STATUS_INVALID_PARAMETER1;
+    }
+
+    STATUS status = FileCloseUmHandle(FileHandle, GetCurrentProcess());
+
+    if (!SUCCEEDED(status))
+    {
+        return STATUS_INVALID_PARAMETER1;
+    }
+
+    return STATUS_SUCCESS;
+}
+
+STATUS
+SyscallFileRead(
+    IN  UM_HANDLE                   FileHandle,
+    OUT_WRITES_BYTES(BytesToRead)
+    PVOID                       Buffer,
+    IN  QWORD                       BytesToRead,
+    OUT QWORD* BytesRead
+)
+{
+    if (!SUCCEEDED(MmuIsBufferValid((PVOID)Buffer, sizeof(PVOID), PAGE_RIGHTS_WRITE, GetCurrentProcess())))
+    {
+        return STATUS_INVALID_PARAMETER2;
+    }
+
+    PFILE_OBJECT fileFromHandle = NULL;
+
+    STATUS status = GetFileFromUmHandle(FileHandle, GetCurrentProcess(), &fileFromHandle);
+
+    if (!SUCCEEDED(status))
+    {
+        return status;
+    }
+
+    if (fileFromHandle != NULL)
+    {
+
+        status = IoReadFile(fileFromHandle, BytesToRead, (QWORD*)0, Buffer, BytesRead);
+
+        if (!SUCCEEDED(status))
+        {
+            return status;
+        }
+
+        return STATUS_SUCCESS;
+    }
+    return STATUS_ELEMENT_NOT_FOUND;
+}
