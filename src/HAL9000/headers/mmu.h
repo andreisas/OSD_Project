@@ -277,11 +277,13 @@ MmuProbeMemory(
 // Returns:      BOOLEAN
 // Parameter:    IN PVOID FaultingAddress
 // Parameter:    IN DWORD ErrorCode
+// Paremeter:    IN QWORD StackAddress
 //******************************************************************************
 BOOLEAN
 MmuSolvePageFault(
     IN      PVOID                   FaultingAddress,
-    IN      DWORD                   ErrorCode
+    IN      DWORD                   ErrorCode,
+    IN      QWORD                   StackAddress
     );
 
 //******************************************************************************

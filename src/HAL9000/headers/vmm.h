@@ -247,7 +247,8 @@ BOOLEAN
 VmmSolvePageFault(
     IN      PVOID                   FaultingAddress,
     IN      PAGE_RIGHTS             RightsRequested,
-    IN      PPAGING_LOCK_DATA       PagingData
+    IN      PPAGING_LOCK_DATA       PagingData,
+    IN      QWORD                   StackAddress
     );
 
 //******************************************************************************

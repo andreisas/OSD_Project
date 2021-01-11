@@ -98,6 +98,23 @@ SyscallHandler(
                     (STATUS*)pSyscallParameters[1]
                 );
                 break;
+            case SyscallVirtualAlloc: 
+                status = SyscallVirtualAlloc(
+                    (PVOID) pSyscallParameters[0],
+                    (QWORD) pSyscallParameters[1],
+                    (VMM_ALLOC_TYPE) pSyscallParameters[2],
+                    (PAGE_RIGHTS) pSyscallParameters[3],
+                    (UM_HANDLE) pSyscallParameters[4],
+                    (QWORD)  pSyscallParameters[5],
+                    (PVOID*) pSyscallParameters[6]
+                );
+                break;
+            case SyscallVirtualFree:
+                status = SyscallVirtualFree(
+                    (PVOID)Address,
+                    (QWORD)Size,
+                    (VMM_FREE_TYPE)FreeType);
+                break;
             default:
                 LOG_ERROR("Unimplemented syscall called from User-space!\n");
                 status = STATUS_UNSUPPORTED;
@@ -644,4 +661,88 @@ SyscallFileRead(
         return STATUS_SUCCESS;
     }
     return STATUS_ELEMENT_NOT_FOUND;
+}
+
+STATUS
+SyscallVirtualAlloc(
+    IN          PVOID                   BaseAddress,
+    IN          QWORD                   Size,
+    IN          VMM_ALLOC_TYPE          AllocType,
+    IN          PAGE_RIGHTS             PageRights,
+    IN_OPT      UM_HANDLE               FileHandle,
+    IN_OPT      QWORD                   Key,
+    OUT         PVOID*                  AllocatedAddress
+)
+{
+    UNREFERENCED_PARAMETER(Key);
+    if (BaseAddress == NULL) 
+    {
+        return STATUS_INVALID_PARAMETER1;
+    }
+
+    if (Size <= 0)
+    {
+        return STATUS_INVALID_PARAMETER2;
+    }
+
+    if (!IsFlagOn(AllocType, VMM_ALLOC_TYPE_COMMIT | VMM_ALLOC_TYPE_RESERVE))
+    {
+        return STATUS_INVALID_PARAMETER3;
+    }
+
+    if (PageRights == PAGE_RIGHTS_ALL)
+    {
+        return STATUS_INVALID_PARAMETER4;
+    }
+
+    PPROCESS process = GetCurrentProcess();
+    PFILE_OBJECT file;
+
+    STATUS status = GetFileFromUmHandle(FileHandle, process, &file);
+
+    status = MmuIsBufferValid(BaseAddress, Size, PageRights, process);
+    if (!SUCCEEDED(status))
+    {
+        LOG_FUNC_ERROR("MmuIsBufferValid BaseAddress", status);
+        return status;
+    }
+
+    status = MmuIsBufferValid(AllocatedAddress, sizeof(PVOID), PageRights, process);
+    if (!SUCCEEDED(status))
+    {
+        LOG_FUNC_ERROR("MmuIsBufferValid AllocatedAddress", status);
+        return status;
+    }
+
+    *AllocatedAddress = VmmAllocRegionEx(BaseAddress, Size, AllocType, PageRights, FALSE, NULL, process->VaSpace, process->PagingData, NULL);
+    return STATUS_SUCCESS;
+}
+
+SyscallVirtualFree(
+    IN          PVOID                   Address,
+    IN          QWORD                   Size,
+    IN          VMM_FREE_TYPE           FreeType
+)
+{
+    if (Address == NULL)
+    {
+        return STATUS_INVALID_PARAMETER1;
+    }
+    if (Size <= 0)
+    {
+        return STATUS_INVALID_PARAMETER2;
+    }
+
+    STATUS status;
+    PPROCESS process = GetCurrentProcess();
+
+    status = MmuIsBufferValid(Address, Size, PAGE_RIGHTS_READWRITE, process);
+    if (!SUCCEEDED(status))
+    {
+        LOG_FUNC_ERROR("MmuIsBufferValid Address", status);
+        return status;
+    }
+
+    VmmFreeRegionEx(Address, Size, FreeType, TRUE, process->VaSpace, process->PagingData);
+    return STATUS_SUCCESS;
 }

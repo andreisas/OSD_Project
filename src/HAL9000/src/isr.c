@@ -113,7 +113,7 @@ _IsrExceptionHandler(
 
         pfAddr = __readcr2();
         LOG_TRACE_EXCEPTION("#PF address: 0x%X\n", pfAddr);
-        exceptionHandled = MmuSolvePageFault(pfAddr, errorCode );
+        exceptionHandled = MmuSolvePageFault(pfAddr, errorCode, StackPointer->Registers.Rsp);
         if (!exceptionHandled)
         {
             PPCPU pCpu;

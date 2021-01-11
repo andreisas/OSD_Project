@@ -11,6 +11,7 @@
 #include "process_internal.h"
 #include "mdl.h"
 #include "iomu.h"
+#include "mmu.c"
 
 #define VMM_SIZE_FOR_RESERVATION_METADATA            (5*TB_SIZE)
 
@@ -457,12 +458,12 @@ VmmChangeCr3(
     // Intel System Programming Manual Vol 3C
     // Section 4.10.4.1 Operations that Invalidate TLBs and Paging-Structure Caches
 
-    // If CR4.PCIDE = 1 and bit 63 of the instruction’s source operand is 0, the instruction invalidates all TLB
-    // entries associated with the PCID specified in bits 11:0 of the instruction’s source operand except those for
+    // If CR4.PCIDE = 1 and bit 63 of the instructionÂ’s source operand is 0, the instruction invalidates all TLB
+    // entries associated with the PCID specified in bits 11:0 of the instructionÂ’s source operand except those for
     // global pages.It also invalidates all entries in all paging - structure caches associated with that PCID.It is not
     // required to invalidate entries in the TLBs and paging - structure caches that are associated with other PCIDs.
 
-    // If CR4.PCIDE = 1 and bit 63 of the instruction’s source operand is 1, the instruction is not required to
+    // If CR4.PCIDE = 1 and bit 63 of the instructionÂ’s source operand is 1, the instruction is not required to
     // invalidate any TLB entries or entries in paging - structure caches.
     __writecr3((Invalidate ? 0 : MOV_TO_CR3_DO_NOT_INVALIDATE_PCID_MAPPINGS) | (QWORD)Pml4Base | Pcid);
 
@@ -752,7 +753,8 @@ BOOLEAN
 VmmSolvePageFault(
     IN      PVOID                   FaultingAddress,
     IN      PAGE_RIGHTS             RightsRequested,
-    IN      PPAGING_LOCK_DATA       PagingData
+    IN      PPAGING_LOCK_DATA       PagingData,
+    IN      QWORD                   StackAddress
     )
 {
     BOOLEAN bSolvedPageFault;
@@ -807,6 +809,27 @@ VmmSolvePageFault(
                                                      &uncacheable,
                                                      &pBackingFile,
                                                      &fileOffset);
+
+    if (!_VmIsKernelAddress(FaultingAddress))
+    {
+        if (PtrDiff((PVOID)StackAddress, FaultingAddress) <= USERMODE_MAX_SIZE)
+        {
+            PTHREAD thread = GetCurrentThread();
+
+            VmmAllocRegionEx(FaultingAddress,
+                PAGE_SIZE,
+                VMM_ALLOC_TYPE_COMMIT,
+                PAGE_RIGHTS_READWRITE,
+                FALSE,
+                NULL,
+                thread->Process->VaSpace,
+                thread->Process->PagingData,
+                NULL
+            );
+
+            bAccessValid = TRUE;
+        }
+    }
 
     __try
     {
@@ -882,7 +905,7 @@ VmmSolvePageFault(
     }
     __finally
     {
-
+        
     }
 
     return bSolvedPageFault;

@@ -38,6 +38,7 @@
 // [0xFFFF'8000'0000'0000 -> 0xFFFF'FFFF'FFFF'FFFF] belongs to KM
 #define PML4_OFFSET_OF_KERNEL_STRUCTURES                        (PAGE_SIZE / 2)
 #define PML4_NO_OF_KERNEL_ENTRIES                               (PAGE_SIZE - PML4_OFFSET_OF_KERNEL_STRUCTURES)
+#define USERMODE_MAX_SIZE                                       (512*PAGE_SIZE)
 
 #pragma pack(push,1)
 
@@ -845,7 +846,8 @@ MmuProbeMemory(
 BOOLEAN
 MmuSolvePageFault(
     IN      PVOID                   FaultingAddress,
-    IN      DWORD                   ErrorCode
+    IN      DWORD                   ErrorCode,
+    IN      QWORD                   StackAddress
     )
 {
     PAGE_RIGHTS rightsRequested;
@@ -861,8 +863,8 @@ MmuSolvePageFault(
 
     return VmmSolvePageFault(FaultingAddress,
                              rightsRequested,
-                             pfErrCode.Usermode ? GetCurrentThread()->Process->PagingData : &m_mmuData.PagingData
-                             );
+                             pfErrCode.Usermode ? GetCurrentThread()->Process->PagingData : &m_mmuData.PagingData,
+                             StackAddress);
 }
 
 STATUS
@@ -1064,6 +1066,8 @@ MmuAllocStack(
 
     // if we want to protect the stack we'll allocate an additional safeguard PAGE
     stackGuardSize = ProtectStack ? STACK_GUARD_SIZE : 0;
+    if (ProtectStack && Process != NULL)
+        stackGuardSize = USERMODE_MAX_SIZE;
     totalAllocationSize = StackSize + stackGuardSize;
     allocTypeCommit = VMM_ALLOC_TYPE_COMMIT;
     allocTypeCommit |= (LazyMap ? 0 : VMM_ALLOC_TYPE_NOT_LAZY);

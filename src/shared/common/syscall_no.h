@@ -28,5 +28,9 @@ typedef enum _SYSCALL_ID
     SyscallIdFileRead,
     SyscallIdFileWrite,
 
+
+    SyscallVirtualAlloc,
+    SyscallVirtualFree,
+
     SyscallIdReserved = SyscallIdFileWrite + 1
 } SYSCALL_ID;

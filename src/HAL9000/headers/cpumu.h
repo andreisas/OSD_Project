@@ -9,6 +9,7 @@
 
 #define STACK_DEFAULT_SIZE          (8*PAGE_SIZE)
 #define STACK_GUARD_SIZE            (2*PAGE_SIZE)
+#define USERMODE_STACK_DEFAULT_SIZE     (1*PAGE_SIZE)
 
 typedef struct _THREADING_DATA
 {
