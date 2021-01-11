@@ -518,6 +518,17 @@ SyscallFileCreate(
         strcpy(fullPath, Path);
     }
 
+    PPROCESS currentProcess = GetCurrentProcess();
+
+    /// <summary>
+    /// Quotas
+    /// </summary>
+
+    if (currentProcess->NrOfFiles >= PROCESS_MAX_OPEN_FILES) {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+
     PFILE_OBJECT createFileObject = NULL;
 
     STATUS status = IoCreateFile(&createFileObject, fullPath, Directory, Create, FALSE);
@@ -534,8 +545,7 @@ SyscallFileCreate(
         0
     );
 
-    PPROCESS currentProcess = GetCurrentProcess();
-
+    
     status = UmHandleInit(Handle);
 
     Handle->pResource = createFileObject;
@@ -547,6 +557,12 @@ SyscallFileCreate(
     LockRelease(&currentProcess->FileHandleListLock, dummyState);
 
     *FileHandle = Handle->Handle;
+
+    /// <summary>
+    /// Quotas
+    /// </summary>
+
+    currentProcess->NrOfFiles++;
 
     return STATUS_SUCCESS;
 }
@@ -576,6 +592,12 @@ SyscallFileClose(
     }
 
     STATUS status = FileCloseUmHandle(FileHandle, GetCurrentProcess());
+
+    /// <summary>
+    /// Quotas
+    /// </summary>
+    
+    currentProcess->NrOfFiles--;
 
     if (!SUCCEEDED(status))
     {

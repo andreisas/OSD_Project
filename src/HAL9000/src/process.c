@@ -303,6 +303,17 @@ ProcessCreate(
         }
     }
     pProcess->NewThreadHandle = 0;
+
+    for (int i = 0; i < 1000; i++)
+        pProcess->FileHandleList[i] = NULL;
+
+    /// <summary>
+    /// Quotas
+    /// </summary>
+
+    qProcess->NrOfFiles = 0;
+    qProcess->NrOfPhysicalFrames = 0;
+
     LOG_FUNC_END;
 
     return status;
