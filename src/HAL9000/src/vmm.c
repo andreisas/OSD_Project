@@ -10,6 +10,7 @@
 #include "thread_internal.h"
 #include "process_internal.h"
 #include "mdl.h"
+#include "mmu.c"
 
 #define VMM_SIZE_FOR_RESERVATION_METADATA            (5*TB_SIZE)
 
@@ -733,7 +734,8 @@ BOOLEAN
 VmmSolvePageFault(
     IN      PVOID                   FaultingAddress,
     IN      PAGE_RIGHTS             RightsRequested,
-    IN      PPAGING_LOCK_DATA       PagingData
+    IN      PPAGING_LOCK_DATA       PagingData,
+    IN      QWORD                   StackAddress
     )
 {
     BOOLEAN bSolvedPageFault;
@@ -788,6 +790,27 @@ VmmSolvePageFault(
                                                      &uncacheable,
                                                      &pBackingFile,
                                                      &fileOffset);
+
+    if (!_VmIsKernelAddress(FaultingAddress))
+    {
+        if (PtrDiff((PVOID)StackAddress, FaultingAddress) <= USERMODE_MAX_SIZE)
+        {
+            PTHREAD thread = GetCurrentThread();
+
+            VmmAllocRegionEx(FaultingAddress,
+                PAGE_SIZE,
+                VMM_ALLOC_TYPE_COMMIT,
+                PAGE_RIGHTS_READWRITE,
+                FALSE,
+                NULL,
+                thread->Process->VaSpace,
+                thread->Process->PagingData,
+                NULL
+            );
+
+            bAccessValid = TRUE;
+        }
+    }
 
     __try
     {
@@ -857,7 +880,7 @@ VmmSolvePageFault(
     }
     __finally
     {
-
+        
     }
 
     return bSolvedPageFault;
