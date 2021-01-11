@@ -340,7 +340,7 @@ ThreadCreateEx(
     if (!Process->PagingData->Data.KernelSpace)
     {
         // Create user-mode stack
-        pThread->UserStack = MmuAllocStack(STACK_DEFAULT_SIZE,
+        pThread->UserStack = MmuAllocStack(USERMODE_STACK_DEFAULT_SIZE,
                                            TRUE,
                                            FALSE,
                                            Process);
