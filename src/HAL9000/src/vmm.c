@@ -620,6 +620,9 @@ VmmAllocRegionEx(
                                      PagingData
                 );
 
+                PVOID swapAlignedAddress = GetMinTimestampVirtualAddress();
+                IomuSwapOut(swapAlignedAddress);
+
                 if (PagingData != NULL && !PagingData->Data.KernelSpace)
                 {
                     _VmmAddFrameMappings(pa, pBaseAddress, noOfFrames);
@@ -833,6 +836,7 @@ VmmSolvePageFault(
             if (!PagingData->Data.KernelSpace)
             {
                 _VmmAddFrameMappings(pa, alignedAddress, 1);
+                IomuSwapIn(alignedAddress);
             }
 
             // 3. If the virtual address is backed by a file read its contents

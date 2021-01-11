@@ -112,3 +112,6 @@ PPROCESS
 GetCurrentProcess(
     void
     );
+
+PVOID
+GetMinTimestampVirtualAddress(void);

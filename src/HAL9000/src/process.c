@@ -20,11 +20,6 @@ typedef struct _PROCESS_SYSTEM_DATA
 
     LIST_ENTRY      ProcessList;
     MUTEX           ProcessListLock;
-
-    LOCK                            FrameMapLock;
-
-    _Guarded_by_(FrameMapLock)
-    LIST_ENTRY                      FrameMappingsHead;
 } PROCESS_SYSTEM_DATA, *PPROCESS_SYSTEM_DATA;
 
 static PROCESS_SYSTEM_DATA m_processData;
@@ -316,8 +311,8 @@ ProcessCreate(
     /// Quotas
     /// </summary>
 
-    qProcess->NrOfFiles = 0;
-    qProcess->NrOfPhysicalFrames = 0;
+    pProcess->NrOfFiles = 0;
+    pProcess->NrOfPhysicalFrames = 0;
 
     LOG_FUNC_END;
 
@@ -780,4 +775,26 @@ _ProcessDestroy(
     }
 
     ExFreePoolWithTag(Process, HEAP_PROCESS_TAG);
+}
+
+
+PVOID
+GetMinTimestampVirtualAddress(VOID)
+{
+    PPROCESS pProcess = GetCurrentProcess();
+    QWORD minTimestamp = MAX_QWORD;
+    PVOID VirtualAddress;
+
+    PLIST_ENTRY pCurEntry;
+    for (pCurEntry = (*pProcess).FrameMappingsHead.Flink;
+        pCurEntry != &(*pProcess).FrameMappingsHead;
+        pCurEntry = pCurEntry->Flink
+        ) {
+        PFRAME_MAPPING frame = CONTAINING_RECORD(pCurEntry, FRAME_MAPPING, ListEntry);
+        if (frame->Timestamp < minTimestamp) {
+            minTimestamp = frame->Timestamp;
+            VirtualAddress = frame->VirtualAddress;
+        }
+    }
+    return VirtualAddress;
 }

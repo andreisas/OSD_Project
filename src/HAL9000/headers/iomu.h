@@ -124,3 +124,6 @@ BOOLEAN
 IomuIsInterruptSpurious(
     IN          BYTE                    Vector
     );
+
+STATUS IomuSwapIn(OUT PVOID VirtualAddress);
+STATUS IomuSwapOut(IN PVOID VirtualAddress);

@@ -4,6 +4,8 @@
 #include "bitmap.h"
 #include "synch.h"
 #include "thread.h"
+#include "thread_internal.h"
+#include "process.h"
 
 typedef struct _MEMORY_REGION_LIST
 {

@@ -13,6 +13,7 @@
 #include "cmd_net_helper.h"
 #include "cmd_basic.h"
 #include "boot_module.h"
+#include "iomu.h"
 
 #include "process.h"
 
