@@ -3,6 +3,9 @@
 #include "int15.h"
 #include "bitmap.h"
 #include "synch.h"
+#include "thread.h"
+#include "thread_internal.h"
+#include "process.h"
 
 typedef struct _MEMORY_REGION_LIST
 {
@@ -179,6 +182,22 @@ PmmReserveMemoryEx(
     }
 
     LockRelease( &m_pmmData.AllocationLock, oldState);
+
+    PTHREAD pThread = GetCurrentThread();
+    PPROCESS pCurrentProcess = NULL;
+    BOOLEAN bSystemProcess;
+
+    if (pThread != NULL)
+    {
+        pCurrentProcess = pThread->Process;
+    }
+
+    bSystemProcess = (pCurrentProcess == NULL) || ProcessIsSystem(pCurrentProcess);
+
+    LOG("Reserved physical frames from 0x%X of size 0x%X on behalf of [%s] process\n",
+        idx * PAGE_SIZE, ((QWORD)NoOfFrames * PAGE_SIZE),
+        bSystemProcess ? "SYSTEM" : ProcessGetName(pCurrentProcess));
+
 
     return (PHYSICAL_ADDRESS) ( (QWORD) idx * PAGE_SIZE );
 }

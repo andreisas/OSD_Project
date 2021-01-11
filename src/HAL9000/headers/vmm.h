@@ -9,6 +9,8 @@ typedef struct _VMM_RESERVATION_SPACE* PVMM_RESERVATION_SPACE;
 
 typedef struct _MDL *PMDL;
 
+typedef struct _FRAME_MAPPING *PFRAME_MAPPING;
+
 _No_competing_thread_
 void
 VmmPreinit(
@@ -308,3 +310,16 @@ VmmIsBufferValid(
     IN          PVMM_RESERVATION_SPACE              ReservationSpace,
     IN          BOOLEAN                             KernelAccess
     );
+
+static
+void
+_VmmAddFrameMappings(
+    IN          PHYSICAL_ADDRESS    PhysicalAddress,
+    IN          PVOID               VirtualAddress,
+    IN          DWORD               FrameCount
+);
+
+void
+VmmTick(
+    void
+);

@@ -71,6 +71,12 @@ typedef struct _PROCESS
     _Guarded_by_(ThreadHandleListLock)
     QWORD NewThreadHandle;
 
+
+    LOCK                            FrameMapLock;
+
+    _Guarded_by_(FrameMapLock)
+    LIST_ENTRY                      FrameMappingsHead;
+
 } PROCESS, *PPROCESS;
 
 //******************************************************************************

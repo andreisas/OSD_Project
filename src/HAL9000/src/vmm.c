@@ -10,6 +10,7 @@
 #include "thread_internal.h"
 #include "process_internal.h"
 #include "mdl.h"
+#include "iomu.h"
 #include "mmu.c"
 
 #define VMM_SIZE_FOR_RESERVATION_METADATA            (5*TB_SIZE)
@@ -36,6 +37,16 @@ BOOLEAN
     );
 
 typedef FUNC_PageWalkCallback *PFUNC_PageWalkCallback;
+
+typedef struct _FRAME_MAPPING
+{
+    PHYSICAL_ADDRESS    PhysicalAddress;
+    PVOID               VirtualAddress;
+
+    QWORD               Timestamp;
+
+    LIST_ENTRY          ListEntry;
+} FRAME_MAPPING, * PFRAME_MAPPING;
 
 typedef struct _VMM_MAP_UNMAP_PAGE_WALK_CONTEXT
 {
@@ -447,12 +458,12 @@ VmmChangeCr3(
     // Intel System Programming Manual Vol 3C
     // Section 4.10.4.1 Operations that Invalidate TLBs and Paging-Structure Caches
 
-    // If CR4.PCIDE = 1 and bit 63 of the instruction’s source operand is 0, the instruction invalidates all TLB
-    // entries associated with the PCID specified in bits 11:0 of the instruction’s source operand except those for
+    // If CR4.PCIDE = 1 and bit 63 of the instructionÂ’s source operand is 0, the instruction invalidates all TLB
+    // entries associated with the PCID specified in bits 11:0 of the instructionÂ’s source operand except those for
     // global pages.It also invalidates all entries in all paging - structure caches associated with that PCID.It is not
     // required to invalidate entries in the TLBs and paging - structure caches that are associated with other PCIDs.
 
-    // If CR4.PCIDE = 1 and bit 63 of the instruction’s source operand is 1, the instruction is not required to
+    // If CR4.PCIDE = 1 and bit 63 of the instructionÂ’s source operand is 1, the instruction is not required to
     // invalidate any TLB entries or entries in paging - structure caches.
     __writecr3((Invalidate ? 0 : MOV_TO_CR3_DO_NOT_INVALIDATE_PCID_MAPPINGS) | (QWORD)Pml4Base | Pcid);
 
@@ -609,6 +620,14 @@ VmmAllocRegionEx(
                                      Uncacheable,
                                      PagingData
                 );
+
+                PVOID swapAlignedAddress = GetMinTimestampVirtualAddress();
+                IomuSwapOut(swapAlignedAddress);
+
+                if (PagingData != NULL && !PagingData->Data.KernelSpace)
+                {
+                    _VmmAddFrameMappings(pa, pBaseAddress, noOfFrames);
+                }
 
                 // Check if the mapping is backed up by a file
                 if (FileObject != NULL)
@@ -836,6 +855,12 @@ VmmSolvePageFault(
                                  uncacheable,
                                  PagingData
                                  );
+
+            if (!PagingData->Data.KernelSpace)
+            {
+                _VmmAddFrameMappings(pa, alignedAddress, 1);
+                IomuSwapIn(alignedAddress);
+            }
 
             // 3. If the virtual address is backed by a file read its contents
             if (pBackingFile != NULL)
@@ -1393,4 +1418,73 @@ BOOLEAN
     }
 
     return bContinue;
+}
+
+static
+void
+_VmmAddFrameMappings(
+    IN          PHYSICAL_ADDRESS    PhysicalAddress,
+    IN          PVOID               VirtualAddress,
+    IN          DWORD               FrameCount
+)
+{
+    PPROCESS pProcess;
+    PFRAME_MAPPING pMapping;
+    INTR_STATE intrState;
+
+    pProcess = GetCurrentProcess();
+
+    if (ProcessIsSystem(pProcess))
+    {
+        return;
+    }
+
+    for (DWORD i = 0; i < FrameCount; ++i)
+    {
+        pMapping = ExAllocatePoolWithTag(PoolAllocatePanicIfFail, sizeof(FRAME_MAPPING), HEAP_MMU_TAG, 0);
+
+        pMapping->PhysicalAddress = PtrOffset(PhysicalAddress, i * PAGE_SIZE);
+        pMapping->VirtualAddress = PtrOffset(VirtualAddress, i * PAGE_SIZE);
+        pMapping->Timestamp = 1;
+
+        LockAcquire(&pProcess->FrameMapLock, &intrState);
+        InsertTailList(&pProcess->FrameMappingsHead, &pMapping->ListEntry);
+        LockRelease(&pProcess->FrameMapLock, intrState);
+
+        LOG("Allocated entry from 0x%X -> 0x%X\n",
+            pMapping->VirtualAddress, pMapping->PhysicalAddress);
+    }
+}
+
+void
+VmmTick(
+    void
+)
+{
+    PPROCESS pProcess = GetCurrentProcess();
+    INTR_STATE intrState;
+
+    LockAcquire(&pProcess->FrameMapLock, &intrState);
+    for (PLIST_ENTRY pCurrentEntry = pProcess->FrameMappingsHead.Flink;
+        pCurrentEntry != &pProcess->FrameMappingsHead;
+        pCurrentEntry = pCurrentEntry->Flink)
+    {
+        BOOLEAN bAccessed;
+        BOOLEAN bDirty;
+        PHYSICAL_ADDRESS pa;
+        PML4 cr3;
+
+        PFRAME_MAPPING pMapping = CONTAINING_RECORD(pCurrentEntry, FRAME_MAPPING, ListEntry);
+
+        cr3.Raw = (QWORD)pProcess->PagingData->Data.BasePhysicalAddress;
+
+        pa = VmmGetPhysicalAddressEx(cr3,
+            pMapping->VirtualAddress,
+            &bAccessed,
+            &bDirty);
+        ASSERT(pa == pMapping->PhysicalAddress);
+
+        pMapping->Timestamp = IomuGetSystemTicks();
+    }
+    LockRelease(&pProcess->FrameMapLock, intrState);
 }

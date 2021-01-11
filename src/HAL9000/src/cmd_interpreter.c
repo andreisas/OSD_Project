@@ -13,6 +13,9 @@
 #include "cmd_net_helper.h"
 #include "cmd_basic.h"
 #include "boot_module.h"
+#include "iomu.h"
+
+#include "process.h"
 
 #pragma warning(push)
 
@@ -203,6 +206,22 @@ CmdRun(
     DWORD bytesRead;
 
     bytesRead = 0;
+
+    for (DWORD i = 0; i < 16; ++i)
+    {
+        STATUS status;
+        PPROCESS pProcess;
+        char fullPath[MAX_PATH];
+
+        pProcess = NULL;
+
+        status = snprintf(fullPath, MAX_PATH, "%sAPPLIC~1\\VirtualAllocNormal.exe",
+            IomuGetSystemPartitionPath());
+        ASSERT(SUCCEEDED(status));
+
+        status = ProcessCreate(fullPath, NULL, &pProcess);
+        ASSERT(SUCCEEDED(status));
+    }
 
     exit = _CmdExecuteModuleCommands();
     while (!exit)

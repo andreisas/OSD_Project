@@ -24,6 +24,7 @@
 #include "smp.h"
 #include "ex_system.h"
 #include "lock_common.h"
+#include "mmu.h"
 
 #define PIC_MASTER_OFFSET                   0x20
 #define PIC_SLAVE_OFFSET                    0x28
@@ -63,6 +64,9 @@ typedef struct _REGISTERED_INTERRUPT_LIST
     LIST_ENTRY                  List;
 } REGISTERED_INTERRUPT_LIST, *PREGISTERED_INTERRUPT_LIST;
 
+#define SWAP_FILE_SIZE 0x100000
+#define SWAP_PAGES_NB SWAP_FILE_SIZE/PAGE_SIZE
+
 typedef struct _IOMU_DATA
 {
     QWORD                       TscFrequency;
@@ -94,6 +98,18 @@ typedef struct _IOMU_DATA
     _Guarded_by_(GlobalInterruptLock)
     BITMAP                      InterruptBitmap;
     BYTE                        BitmapBuffer[NO_OF_TOTAL_INTERRUPTS / BITS_FOR_STRUCTURE(BYTE)];
+
+    QWORD SwapFileSize;
+    LOCK SwapFileLock;
+
+    BITMAP SwapBitmap;
+    PVOID SwapBitmapData;
+
+    struct {
+        PVOID VirtualAddress;
+        PVOID PhysicalAddress;
+    } SwapPages[SWAP_PAGES_NB];
+
 } IOMU_DATA, *PIOMU_DATA;
 STATIC_ASSERT(FIELD_OFFSET(IOMU_DATA, SystemUptime) % sizeof(QWORD) == 0 );
 
@@ -1270,7 +1286,36 @@ _IomuInitializeSwapFile(
             continue;
         }
         bOpenedSwapFile = TRUE;
+        PARTITION_INFORMATION partitionInformation;
+        PIRP pIrp = IoBuildDeviceIoControlRequest(IOCTL_VOLUME_PARTITION_INFO,
+            pVpb->VolumeDevice,
+            NULL,
+            0,
+            &partitionInformation,
+            sizeof(PARTITION_INFORMATION));
+        if (NULL == pIrp)
+        {
+            LOG_ERROR("IoBuildDeviceIoControlRequest failed\n");
+            continue;
+        }
+
+        status = IoCallDriver(pVpb->VolumeDevice, pIrp);
+        if (!SUCCEEDED(status))
+        {
+            LOG_FUNC_ERROR("IoCallDriver", status);
+            continue;
+        }
+
+        if (!SUCCEEDED(pIrp->IoStatus.Status))
+        {
+            LOG_FUNC_ERROR("IoCallDriver", pIrp->IoStatus.Status);
+            continue;
+        }
+
+        LOG("swap size is %U bytes!\n", partitionInformation.PartitionSize * SECTOR_SIZE);
     }
+
+
 
     return bOpenedSwapFile ? STATUS_SUCCESS : STATUS_FILE_NOT_FOUND;
 }
@@ -1367,4 +1412,95 @@ _IomuProgramPciInterrupt(
     LOG_FUNC_END;
 
     return status;
+}
+
+
+STATUS IomuSwapOut(IN PVOID VirtualAddress) {
+    STATUS status;
+    INTR_STATE intrState;
+
+    PVOID KernelAddress;
+    PPROCESS Process = GetCurrentProcess();
+
+    PVOID alignedVirtualAddress = (PVOID)AlignAddressLower(VirtualAddress, PAGE_SIZE);
+
+    STATUS status = MmuGetSystemVirtualAddressForUserBuffer(
+        alignedVirtualAddress,
+        PAGE_SIZE,
+        PAGE_RIGHTS_READWRITE,
+        Process,
+        &KernelAddress
+    );
+
+    LockAcquire(&m_iomuData.SwapFileLock, &intrState);
+
+    DWORD positionOffset = BitmapScan(&m_iomuData.SwapBitmap, 1, FALSE);
+    if (MAX_DWORD == positionOffset) {
+        LockRelease(&m_iomuData.SwapFileLock, intrState);
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    PFILE_OBJECT SwapFile = IomuGetSwapFile();
+    QWORD swapFileOffset = (QWORD)PAGE_SIZE * positionOffset;
+    QWORD bytesWritten = 0;
+    status = IoWriteFile(SwapFile, PAGE_SIZE, &swapFileOffset, KernelAddress, &bytesWritten);
+    if (status != STATUS_SUCCESS) {
+        LockRelease(&m_iomuData.SwapFileLock, intrState);
+        return STATUS_UNSUCCESSFUL;
+    }
+    if (bytesWritten != PAGE_SIZE) {
+        LockRelease(&m_iomuData.SwapFileLock, intrState);
+        return STATUS_UNSUCCESSFUL;
+    }
+    BitmapSetBitValue(&m_iomuData.SwapBitmap, SwapFile, TRUE);
+    m_iomuData.SwapPages[swapFileOffset].VirtualAddress = KernelAddress;
+    m_iomuData.SwapPages[swapFileOffset].PhysicalAddress = swapFileOffset;
+    MmuUnmapMemoryEx(KernelAddress, PAGE_SIZE, TRUE, NULL);
+    LockRelease(&m_iomuData.SwapFileLock, intrState);
+    return STATUS_SUCCESS;
+}
+
+STATUS IomuSwapIn(OUT PVOID VirtualAddress) {
+
+    STATUS status;
+    INTR_STATE intrState;
+
+    PVOID KernelAddress;
+    PPROCESS Process = GetCurrentProcess();
+
+    PVOID alignedVirtualAddress = (PVOID)AlignAddressLower(VirtualAddress, PAGE_SIZE);
+
+    STATUS status = MmuGetSystemVirtualAddressForUserBuffer(
+        alignedVirtualAddress,
+        PAGE_SIZE,
+        PAGE_RIGHTS_READWRITE,
+        Process,
+        &KernelAddress
+    );
+    
+    LockAcquire(&m_iomuData.SwapFileLock, &intrState);
+    DWORD swapFileOffset;
+    for (DWORD i = 0; i < SWAP_PAGES_NB < i++) {
+        if (m_iomuData.SwapPages[i].VirtualAddress == KernelAddress) {
+            swapFileOffset = i;
+        }
+    }
+    if (alignedVirtualAddress == SWAP_PAGES_NB) {
+        LockRelease(&m_iomuData.SwapFileLock, intrState);
+        return STATUS_UNSUCCESSFUL;
+    }
+    PFILE_OBJECT SwapFile = IomuGetSwapFile();
+    QWORD bytesRead;
+    status = IoReadFile(SwapFile, PAGE_SIZE, &swapFileOffset, &bytesRead);
+    if (STATUS_SUCCESS != status) {
+        LockRelease(&m_iomuData.SwapFileLock, intrState);
+        return STATUS_UNSUCCESSFUL;
+    }
+    if (PAGE_SIZE != bytesRead) {
+        LockRelease(&m_iomuData.SwapFileLock, intrState);
+        return STATUS_UNSUCCESSFUL;
+    }
+    BitmapSetBitValue(&m_iomuData.SwapFileLock, swapFileOffset, FALSE);
+    LockRelease(&m_iomuData.SwapFileLock, intrState);
+    return STATUS_SUCCESS;
 }
