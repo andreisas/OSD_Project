@@ -20,6 +20,11 @@ typedef struct _PROCESS_SYSTEM_DATA
 
     LIST_ENTRY      ProcessList;
     MUTEX           ProcessListLock;
+
+    LOCK                            FrameMapLock;
+
+    _Guarded_by_(FrameMapLock)
+    LIST_ENTRY                      FrameMappingsHead;
 } PROCESS_SYSTEM_DATA, *PPROCESS_SYSTEM_DATA;
 
 static PROCESS_SYSTEM_DATA m_processData;
@@ -451,6 +456,9 @@ _ProcessInit(
 
     pProcess = NULL;
     status = STATUS_SUCCESS;
+
+    InitializeListHead(&pProcess->FrameMappingsHead);
+    LockInit(&pProcess->FrameMapLock);
 
     // we add +1 because of the NULL terminator
     nameSize = (strlen(Name)+1)*sizeof(char);

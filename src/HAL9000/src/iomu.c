@@ -94,6 +94,11 @@ typedef struct _IOMU_DATA
     _Guarded_by_(GlobalInterruptLock)
     BITMAP                      InterruptBitmap;
     BYTE                        BitmapBuffer[NO_OF_TOTAL_INTERRUPTS / BITS_FOR_STRUCTURE(BYTE)];
+
+    QWORD SwapFileSize;
+    LOCK SwapLock;
+    BITMAP 
+
 } IOMU_DATA, *PIOMU_DATA;
 STATIC_ASSERT(FIELD_OFFSET(IOMU_DATA, SystemUptime) % sizeof(QWORD) == 0 );
 
@@ -1270,7 +1275,36 @@ _IomuInitializeSwapFile(
             continue;
         }
         bOpenedSwapFile = TRUE;
+        PARTITION_INFORMATION partitionInformation;
+        PIRP pIrp = IoBuildDeviceIoControlRequest(IOCTL_VOLUME_PARTITION_INFO,
+            pVpb->VolumeDevice,
+            NULL,
+            0,
+            &partitionInformation,
+            sizeof(PARTITION_INFORMATION));
+        if (NULL == pIrp)
+        {
+            LOG_ERROR("IoBuildDeviceIoControlRequest failed\n");
+            continue;
+        }
+
+        status = IoCallDriver(pVpb->VolumeDevice, pIrp);
+        if (!SUCCEEDED(status))
+        {
+            LOG_FUNC_ERROR("IoCallDriver", status);
+            continue;
+        }
+
+        if (!SUCCEEDED(pIrp->IoStatus.Status))
+        {
+            LOG_FUNC_ERROR("IoCallDriver", pIrp->IoStatus.Status);
+            continue;
+        }
+
+        LOG("swap size is %U bytes!\n", partitionInformation.PartitionSize * SECTOR_SIZE);
     }
+
+
 
     return bOpenedSwapFile ? STATUS_SUCCESS : STATUS_FILE_NOT_FOUND;
 }

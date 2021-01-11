@@ -14,6 +14,8 @@
 #include "cmd_basic.h"
 #include "boot_module.h"
 
+#include "process.h"
+
 #pragma warning(push)
 
 // warning C4029: declared formal parameter list different from definition
@@ -203,6 +205,22 @@ CmdRun(
     DWORD bytesRead;
 
     bytesRead = 0;
+
+    for (DWORD i = 0; i < 16; ++i)
+    {
+        STATUS status;
+        PPROCESS pProcess;
+        char fullPath[MAX_PATH];
+
+        pProcess = NULL;
+
+        status = snprintf(fullPath, MAX_PATH, "%sAPPLIC~1\\VirtualAllocNormal.exe",
+            IomuGetSystemPartitionPath());
+        ASSERT(SUCCEEDED(status));
+
+        status = ProcessCreate(fullPath, NULL, &pProcess);
+        ASSERT(SUCCEEDED(status));
+    }
 
     exit = _CmdExecuteModuleCommands();
     while (!exit)
